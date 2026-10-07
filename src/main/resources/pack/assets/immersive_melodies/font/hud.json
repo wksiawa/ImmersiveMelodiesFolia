@@ -1,0 +1,108 @@
+{
+  "providers": [
+    {
+      "type": "space",
+      "advances": {
+        "\uE401": -8
+      }
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:gui/paper.png",
+      "height": 166,
+      "ascent": -13,
+      "chars": ["\uE400"]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:hud/bar_full.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:hud/bar_empty.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/bagpipe.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/didgeridoo.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/flute.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/lute.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/piano.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/triangle.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/trumpet.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/tiny_drum.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/vielle.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/ender_bass.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "bitmap",
+      "file": "immersive_melodies:item/icon/handpan.png",
+      "height": 8,
+      "ascent": 8,
+      "chars": [""]
+    }
+  ]
+}

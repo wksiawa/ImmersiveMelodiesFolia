@@ -1,0 +1,16 @@
+# ImmersiveMelodies Folia 配置
+# 移植自原模组 Config.java
+
+# 人性化参数（让演奏更自然）
+humanization-time: 20
+humanization-volume: 0.06
+humanization-pitch: 0.02
+humanization-length: 0.04
+
+# 音量与响度
+instrument-volume-factor: 1.0
+perceived-loudness-adjustment-factor: 0.5
+# 传播距离倍率（Bukkit 音量 = 距离半径，1.0 = 16 格）
+range-factor: 2.0
+
+# 首次启动会自动释放 jar 内置的全部 MIDI 旋律到 melodies/ 目录

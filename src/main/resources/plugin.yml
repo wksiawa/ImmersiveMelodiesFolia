@@ -1,0 +1,20 @@
+name: ImmersiveMelodiesFolia
+version: '0.8.0-folia'
+main: net.conczi.immersivemelodies.ImmersiveMelodiesPlugin
+api-version: '1.21'
+folia-supported: true
+authors: [Luke100000, FoliaPort]
+description: Server-side Folia port of Immersive Melodies 0.8.0
+softdepend: [CraftEngine]
+commands:
+  immersivemelodies:
+    description: Main command for Immersive Melodies
+    aliases: [im, melodies]
+    usage: /im <subcommand>
+permissions:
+  immersivemelodies.use:
+    default: true
+  immersivemelodies.upload:
+    default: op
+  immersivemelodies.admin:
+    default: op
