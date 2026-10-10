@@ -4,9 +4,6 @@ import net.conczi.immersivemelodies.ImmersiveMelodiesPlugin;
 import net.conczi.immersivemelodies.instrument.InstrumentType;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -24,7 +21,8 @@ import java.util.List;
 /**
  * 运行时字体图集生成器（写入 CraftEngine 资源目录，随 CE 资源包分发）：
  * - 从 jar 内 paper.png 裁剪 GUI 背景 chest_bg.png（192x192 拉伸到 176x166）与 9 个 16x16 按钮图标
- * - 用 AWT（headless 可用）把每个旋律名渲染为白字黑描边的透明 PNG（font/text/t<i>.png），按名字宽度裁剪
+ * - 用原版 ascii.png 字符表把每个旋律名逐字符拼成纯白无描边的透明 PNG（font/text/t<i>.png），
+ *   视觉等同 Minecraft 默认字体；下划线按空格宽度留白
  * - 完整生成 font/hud.json：背景 glyph、E410-E41F 精确位移空格、每首歌 5 行文字 glyph、HUD 保留 glyph
  * 插件启动时与每次上传新歌后调用。
  */
@@ -45,21 +43,41 @@ public class TextAssetGenerator {
     /** GUI 显示的行数 */
     public static final int ROWS = 5;
 
-    private static final Font TEXT_FONT = new Font("Microsoft YaHei", Font.PLAIN, 9);
+    /** 原版空格前进宽度（像素，与默认字体一致） */
+    private static final int SPACE_ADVANCE = 3;
+    /** 非 Latin-1 / 控制字符的替代字形 */
+    private static final char FALLBACK_CHAR = '?';
 
-    private static final String[] BUTTON_NAMES = {
-            "note", "star", "close", "up", "down", "play", "upload", "refresh", "folder"
-    };
-    private static final int[][] BUTTON_XY = {
-            {208, 0}, {224, 0}, {240, 0},
-            {208, 16}, {224, 16}, {240, 16},
-            {208, 32}, {224, 32}, {240, 32}
-    };
+    /**
+     * paper.png 图标带中本插件用到的图标（id, u, v），坐标与原模组
+     * ImmersiveMelodiesScreen / ImmersiveMelodiesFreePlayingScreen 完全一致。
+     * 这是 GUI 图标的唯一配置源：贴图裁剪、模型 json、CraftEngineBridge 物品注册、
+     * MelodyGui 槽位摆放全部引用此表，避免多处硬编码导致图标与功能错位。
+     * u/v 即原模组 TexturedButtonWidget 直接 blit 的纹理坐标（paper.png 不翻转），
+     * 已逐格核对与 1.21.1 原模组源码一致。
+     */
+    public record GuiIcon(String id, int u, int v) {
+    }
+
+    public static final List<GuiIcon> GUI_ICONS = List.of(
+            new GuiIcon("close", 240, 0),      // 灰色回旋箭头：关闭
+            new GuiIcon("tracks", 208, 16),    // 音符纸：曲目列表
+            new GuiIcon("keyboard", 208, 0),   // 钢琴键盘：自由演奏
+            new GuiIcon("pause", 224, 32),     // 双竖线：暂停
+            new GuiIcon("play", 240, 32),      // 绿色三角：继续/演奏
+            new GuiIcon("delete", 240, 16),    // 红色 X：删除（自由演奏界面也用作退出）
+            new GuiIcon("upload", 208, 48),    // 绿色上传云：上传
+            new GuiIcon("help", 208, 32),      // 黄色感叹号：打开帮助
+            new GuiIcon("page_up", 224, 0),    // 灰菱形：上一页（原模组用滚轮翻页，服务端容器界面无滚轮事件，属插件适配控件）
+            new GuiIcon("page_down", 224, 16)  // 黄星：下一页（同上，插件适配控件）
+    );
 
     private final ImmersiveMelodiesPlugin plugin;
     /** 与 hud.json 字形一一对应的歌名与贴图宽度（MelodyGui 构建标题位移用） */
     private final List<String> glyphNames = new ArrayList<>();
     private final List<Integer> glyphWidths = new ArrayList<>();
+    /** 原版 ascii.png 字符表（128x128，16x16 格、每格 8x8），首次生成时加载 */
+    private BufferedImage asciiSheet;
 
     public TextAssetGenerator(ImmersiveMelodiesPlugin plugin) {
         this.plugin = plugin;
@@ -144,31 +162,50 @@ public class TextAssetGenerator {
 
     // ===== 静态图集 =====
 
-    /** 左侧 (0,0,192,192) 拉伸到 176x166 → textures/gui/chest_bg.png */
+    /** 左侧 (0,0,192,192) 拉伸到 176x170 → textures/gui/chest_bg.png
+     *  176=容器9列宽度，170 略大于 6 行容器高度(166)，配合 ascent=10 使羊皮纸背景
+     *  垂直居中并完全覆盖箱子格子区域。 */
     private void generateBackground(BufferedImage paper, File assetsRoot) throws Exception {
-        BufferedImage bg = new BufferedImage(176, 166, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage bg = new BufferedImage(176, 170, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = bg.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.drawImage(paper, 0, 0, 176, 166, 0, 0, 192, 192, null);
+        g.drawImage(paper, 0, 0, 176, 170, 0, 0, 192, 192, null);
         g.dispose();
         savePng(bg, new File(assetsRoot, "textures/gui/chest_bg.png"));
     }
 
-    /** 9 个按钮图标各裁 16x16 → textures/gui/btn_<name>.png */
+    /** 按 {@link #GUI_ICONS} 各裁 16x16 → textures/gui/btn_<id>.png */
     private void generateButtons(BufferedImage paper, File assetsRoot) throws Exception {
-        for (int i = 0; i < BUTTON_NAMES.length; i++) {
-            int x = BUTTON_XY[i][0];
-            int y = BUTTON_XY[i][1];
-            BufferedImage btn = paper.getSubimage(x, y, 16, 16);
-            savePng(btn, new File(assetsRoot, "textures/gui/btn_" + BUTTON_NAMES[i] + ".png"));
+        for (GuiIcon icon : GUI_ICONS) {
+            BufferedImage btn = paper.getSubimage(icon.u(), icon.v(), 16, 16);
+            savePng(btn, new File(assetsRoot, "textures/gui/btn_" + icon.id() + ".png"));
+        }
+        // 清理改版前遗留的旧贴图（note/star/up/down/refresh/folder），避免资源包残留
+        File guiDir = new File(assetsRoot, "textures/gui");
+        File[] oldIcons = guiDir.listFiles((d, n) -> n.startsWith("btn_") && n.endsWith(".png")
+                && GUI_ICONS.stream().noneMatch(i -> n.equals("btn_" + i.id() + ".png")));
+        if (oldIcons != null) {
+            for (File f : oldIcons) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
         }
     }
 
-    /** 按钮模型 json（models/gui/btn_<name>.json）与空模型（models/gui/empty.json，供 gui_blank 使用） */
+    /** 按钮模型 json（models/gui/btn_<id>.json）与空模型（models/gui/empty.json，供 gui_blank 使用） */
     private void generateModelJsons(File assetsRoot) throws Exception {
-        for (String name : BUTTON_NAMES) {
-            String json = "{\"parent\":\"minecraft:item/generated\",\"textures\":{\"layer0\":\"immersive_melodies:gui/btn_" + name + "\"}}";
-            writeUtf8(new File(assetsRoot, "models/gui/btn_" + name + ".json"), json);
+        File modelDir = new File(assetsRoot, "models/gui");
+        File[] oldModels = modelDir.listFiles((d, n) -> n.startsWith("btn_") && n.endsWith(".json")
+                && GUI_ICONS.stream().noneMatch(i -> n.equals("btn_" + i.id() + ".json")));
+        if (oldModels != null) {
+            for (File f : oldModels) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        }
+        for (GuiIcon icon : GUI_ICONS) {
+            String json = "{\"parent\":\"minecraft:item/generated\",\"textures\":{\"layer0\":\"immersive_melodies:gui/btn_" + icon.id() + "\"}}";
+            writeUtf8(new File(assetsRoot, "models/gui/btn_" + icon.id() + ".json"), json);
         }
         writeUtf8(new File(assetsRoot, "models/gui/empty.json"), "{\"textures\":{},\"elements\":[]}");
     }
@@ -179,6 +216,8 @@ public class TextAssetGenerator {
         List<String> names = new ArrayList<>(plugin.getMelodyManager().getMelodyNames());
         names.sort(Comparator.naturalOrder());
 
+        BufferedImage sheet = asciiSheet();
+
         // 字体 provider 的 file 会自动带 textures/ 前缀，故 PNG 输出到 textures/font/text/
         File textDir = new File(assetsRoot, "textures/font/text");
         //noinspection ResultOfMethodCallIgnored
@@ -186,8 +225,8 @@ public class TextAssetGenerator {
 
         List<String> providers = new ArrayList<>();
 
-        // a) 背景 glyph：铺满整个 54 格容器界面（176x166）
-        providers.add("    {\"type\": \"bitmap\", \"file\": \"immersive_melodies:gui/chest_bg.png\", \"height\": 166, \"ascent\": 7, \"chars\": [\"\\uE400\"]}");
+        // a) 背景 glyph：铺满整个 54 格容器界面（176x170，ascent=10 垂直居中）
+        providers.add("    {\"type\": \"bitmap\", \"file\": \"immersive_melodies:gui/chest_bg.png\", \"height\": 170, \"ascent\": 10, \"chars\": [\"\\uE400\"]}");
 
         // b) 精确位移空格：E410..E417 = +1..+128，E418..E41F = -1..-128
         StringBuilder space = new StringBuilder("    {\"type\": \"space\", \"advances\": {");
@@ -213,7 +252,7 @@ public class TextAssetGenerator {
                 break;
             }
             String name = names.get(i);
-            BufferedImage img = renderText(name);
+            BufferedImage img = renderText(sheet, name);
             ImageIO.write(img, "png", new File(textDir, "t" + i + ".png"));
             glyphNames.add(name);
             glyphWidths.add(img.getWidth());
@@ -244,7 +283,7 @@ public class TextAssetGenerator {
         }
 
         // d) HUD 保留 glyph：乐谱小图标、11 个乐器图标、进度条（演奏 HUD 仍在使用）
-        providers.add("    {\"type\": \"bitmap\", \"file\": \"immersive_melodies:gui/btn_note.png\", \"height\": 8, \"ascent\": 8, \"chars\": [\"\\uE100\"]}");
+        providers.add("    {\"type\": \"bitmap\", \"file\": \"immersive_melodies:gui/btn_keyboard.png\", \"height\": 8, \"ascent\": 8, \"chars\": [\"\\uE100\"]}");
         for (InstrumentType type : InstrumentType.values()) {
             providers.add("    {\"type\": \"bitmap\", \"file\": \"immersive_melodies:item/icon/" + type.getId()
                     + ".png\", \"height\": 8, \"ascent\": 8, \"chars\": [\"\\u"
@@ -261,56 +300,88 @@ public class TextAssetGenerator {
         plugin.getLogger().info("字体图集已生成: " + glyphNames.size() + " 首歌名字贴 -> " + textDir.getParent());
     }
 
-    /**
-     * 把旋律名渲染为透明底 PNG：白字 + 上下左右 1px 黑描边，按实际内容宽度裁剪。
-     */
-    private BufferedImage renderText(String name) {
-        BufferedImage probe = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D pg = probe.createGraphics();
-        pg.setFont(TEXT_FONT);
-        FontMetrics fm = pg.getFontMetrics();
-        int w = Math.max(4, fm.stringWidth(name) + 4);
-        int h = fm.getHeight() + 4;
-        pg.dispose();
-
-        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        g.setFont(TEXT_FONT);
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-        int x = 2;
-        int y = fm.getAscent() + 2;
-        g.setColor(Color.BLACK);
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx != 0 || dy != 0) {
-                    g.drawString(name, x + dx, y + dy);
+    /** 从 jar 内加载原版 ascii.png 字符表（128x128，16x16 格、每格 8x8） */
+    private BufferedImage asciiSheet() throws Exception {
+        if (asciiSheet == null) {
+            try (InputStream in = plugin.getResource("ascii.png")) {
+                if (in == null) {
+                    throw new IllegalStateException("jar 内缺少 ascii.png");
                 }
+                BufferedImage img = ImageIO.read(in);
+                if (img == null || img.getWidth() != 128 || img.getHeight() != 128) {
+                    throw new IllegalStateException("ascii.png 无效，应为 128x128 原版字符表");
+                }
+                asciiSheet = img;
             }
         }
-        g.setColor(Color.WHITE);
-        g.drawString(name, x, y);
-        g.dispose();
-        return trim(img);
+        return asciiSheet;
     }
 
-    /** 裁剪到非透明像素的包围盒（贴图宽即字形 advance） */
-    private BufferedImage trim(BufferedImage img) {
-        int minX = img.getWidth(), minY = img.getHeight(), maxX = -1, maxY = -1;
-        for (int y = 0; y < img.getHeight(); y++) {
-            for (int x = 0; x < img.getWidth(); x++) {
-                if ((img.getRGB(x, y) >>> 24) != 0) {
-                    if (x < minX) minX = x;
-                    if (y < minY) minY = y;
-                    if (x > maxX) maxX = x;
-                    if (y > maxY) maxY = y;
+    /**
+     * 用原版 ascii.png 字符表逐字符拼出旋律名：黑色像素、无描边，
+     * 与原模组 MelodyListWidget 歌名颜色 0x404040（深灰）接近，在浅色羊皮纸背景上清晰可读。
+     * 下划线按用户要求渲染为空格（仅留白 3px）；非 Latin-1 / 控制字符以 '?' 代替。
+     * 贴图恒高 8（hud.json 中 height=8 时像素 1:1 显示），宽 = 各字符原版前进宽度之和，
+     * 即该 bitmap 字形的实际 advance，MelodyGui 据此精确回位游标。
+     */
+    private BufferedImage renderText(BufferedImage sheet, String name) {
+        int len = name.length();
+        int[] advances = new int[len];
+        int total = 0;
+        for (int i = 0; i < len; i++) {
+            advances[i] = charAdvance(sheet, name.charAt(i));
+            total += advances[i];
+        }
+
+        BufferedImage img = new BufferedImage(Math.max(1, total), 8, BufferedImage.TYPE_INT_ARGB);
+        int x = 0;
+        for (int i = 0; i < len; i++) {
+            char c = name.charAt(i);
+            if (c != '_' && c != ' ') {
+                if (c < 0x20 || c > 0xFF) {
+                    c = FALLBACK_CHAR;
+                }
+                int sx = (c & 15) * 8;
+                int sy = (c >> 4) * 8;
+                // 复制该字符整格 8x8 的不透明像素，统一染成黑色（原版歌名深灰，这里用纯黑更清晰）
+                for (int dx = 0; dx < 8; dx++) {
+                    for (int y = 0; y < 8; y++) {
+                        int argb = sheet.getRGB(sx + dx, sy + y);
+                        if ((argb >>> 24) != 0 && x + dx < img.getWidth()) {
+                            img.setRGB(x + dx, y, 0xFF000000);
+                        }
+                    }
+                }
+            }
+            x += advances[i];
+        }
+        return img;
+    }
+
+    /**
+     * 原版字符前进宽度（与 BitmapProvider 自动包围盒算法一致）：
+     * 格内非空像素包围盒宽 + 1px 尾随间距；空格、下划线、控制字符与全空格为 3px。
+     */
+    private int charAdvance(BufferedImage sheet, char c) {
+        if (c == ' ' || c == '_' || c < 0x20 || c > 0xFF) {
+            return SPACE_ADVANCE;
+        }
+        int sx = (c & 15) * 8;
+        int sy = (c >> 4) * 8;
+        int left = 8;
+        int right = -1;
+        for (int dx = 0; dx < 8; dx++) {
+            for (int y = 0; y < 8; y++) {
+                if ((sheet.getRGB(sx + dx, sy + y) >>> 24) != 0) {
+                    if (dx < left) {
+                        left = dx;
+                    }
+                    right = dx;
+                    break;
                 }
             }
         }
-        if (maxX < minX || maxY < minY) {
-            return new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        }
-        return img.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        return right < 0 ? SPACE_ADVANCE : right - left + 2;
     }
 
     private void savePng(BufferedImage img, File out) throws Exception {

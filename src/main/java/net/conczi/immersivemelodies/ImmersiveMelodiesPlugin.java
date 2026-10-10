@@ -7,6 +7,9 @@ import net.conczi.immersivemelodies.hud.HudManager;
 import net.conczi.immersivemelodies.listener.InstrumentListener;
 import net.conczi.immersivemelodies.listener.UploadListener;
 import net.conczi.immersivemelodies.melody.MelodyManager;
+import net.conczi.immersivemelodies.mob.MobInstrumentListener;
+import net.conczi.immersivemelodies.mob.MobInstrumentManager;
+import net.conczi.immersivemelodies.mob.MobPlaybackManager;
 import net.conczi.immersivemelodies.pack.ResourcePackBuilder;
 import net.conczi.immersivemelodies.play.PlaybackManager;
 import net.conczi.immersivemelodies.text.TextAssetGenerator;
@@ -25,6 +28,9 @@ public final class ImmersiveMelodiesPlugin extends JavaPlugin {
     private CraftEngineBridge craftEngineBridge;
     private TextAssetGenerator textAssetGenerator;
     private net.conczi.immersivemelodies.gui.MelodyGui melodyGui;
+    private MobInstrumentManager mobInstrumentManager;
+    private MobPlaybackManager mobPlaybackManager;
+    private UploadListener uploadListener;
 
     public static ImmersiveMelodiesPlugin getInstance() {
         return instance;
@@ -40,6 +46,8 @@ public final class ImmersiveMelodiesPlugin extends JavaPlugin {
 
         this.playbackManager = new PlaybackManager(this);
         this.hudManager = new HudManager(this);
+        this.mobInstrumentManager = new MobInstrumentManager(this);
+        this.mobPlaybackManager = new MobPlaybackManager(this);
 
         // 资源包：生成独立 zip；若装了 CraftEngine 则同时注入其资源包目录
         ResourcePackBuilder packBuilder = new ResourcePackBuilder(this);
@@ -56,9 +64,13 @@ public final class ImmersiveMelodiesPlugin extends JavaPlugin {
 
         this.melodyGui = new net.conczi.immersivemelodies.gui.MelodyGui(this);
         getServer().getPluginManager().registerEvents(melodyGui, this);
+        getServer().getPluginManager().registerEvents(
+                new net.conczi.immersivemelodies.gui.FreePlayGui(this), this);
 
         getServer().getPluginManager().registerEvents(new InstrumentListener(this), this);
-        getServer().getPluginManager().registerEvents(new UploadListener(this), this);
+        this.uploadListener = new UploadListener(this);
+        getServer().getPluginManager().registerEvents(uploadListener, this);
+        getServer().getPluginManager().registerEvents(new MobInstrumentListener(this), this);
 
         // 合成配方：必须等 CraftEngine 物品注册完成后再登记，
         // 否则配方结果退化为普通纸（无模型贴图）。
@@ -82,6 +94,9 @@ public final class ImmersiveMelodiesPlugin extends JavaPlugin {
     public void onDisable() {
         if (playbackManager != null) {
             playbackManager.stopAll();
+        }
+        if (mobPlaybackManager != null) {
+            mobPlaybackManager.stopAll();
         }
         instance = null;
     }
@@ -139,5 +154,17 @@ public final class ImmersiveMelodiesPlugin extends JavaPlugin {
 
     public net.conczi.immersivemelodies.gui.MelodyGui getMelodyGui() {
         return melodyGui;
+    }
+
+    public MobInstrumentManager getMobInstrumentManager() {
+        return mobInstrumentManager;
+    }
+
+    public MobPlaybackManager getMobPlaybackManager() {
+        return mobPlaybackManager;
+    }
+
+    public UploadListener getUploadListener() {
+        return uploadListener;
     }
 }

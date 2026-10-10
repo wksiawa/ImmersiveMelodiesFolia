@@ -112,4 +112,41 @@ public class MelodyManager {
     public void registerMelody(String name, Melody melody) {
         melodies.put(name.toLowerCase(Locale.ROOT), melody);
     }
+
+    /**
+     * 该旋律是否为玩家上传（对应原模组 player 命名空间，可被删除）。
+     * 内置旋律在 melodies/ 目录，永远不可删。
+     */
+    public boolean isUploaded(String name) {
+        if (name == null) {
+            return false;
+        }
+        String id = name.toLowerCase(Locale.ROOT);
+        File[] files = uploadDir.listFiles((d, n) ->
+                n.toLowerCase(Locale.ROOT).equals(id + ".mid")
+                        || n.toLowerCase(Locale.ROOT).equals(id + ".midi"));
+        return files != null && files.length > 0;
+    }
+
+    /**
+     * 删除玩家上传的旋律：注销内存记录并删除 uploads/ 中的文件。
+     * 内置旋律或不存在时返回 false。调用方需先做权限校验。
+     */
+    public boolean deleteMelody(String name) {
+        if (!isUploaded(name)) {
+            return false;
+        }
+        String id = name.toLowerCase(Locale.ROOT);
+        melodies.remove(id);
+        File[] files = uploadDir.listFiles((d, n) ->
+                n.toLowerCase(Locale.ROOT).equals(id + ".mid")
+                        || n.toLowerCase(Locale.ROOT).equals(id + ".midi"));
+        if (files != null) {
+            for (File f : files) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        }
+        return true;
+    }
 }

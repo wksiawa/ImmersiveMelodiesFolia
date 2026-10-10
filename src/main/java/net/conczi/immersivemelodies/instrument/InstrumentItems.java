@@ -27,6 +27,9 @@ public final class InstrumentItems {
             NamespacedKey.fromString("immersive_melodies:playing");
     private static final NamespacedKey KEY_MELODY =
             NamespacedKey.fromString("immersive_melodies:melody");
+    /** 启用的曲目序号列表（对应原模组 enabled_tracks 数据组件）；空列表 = 全部启用 */
+    private static final NamespacedKey KEY_TRACKS =
+            NamespacedKey.fromString("immersive_melodies:enabled_tracks");
 
     private InstrumentItems() {
     }
@@ -157,6 +160,48 @@ public final class InstrumentItems {
             return;
         }
         meta.getPersistentDataContainer().set(KEY_MELODY, PersistentDataType.STRING, melodyName);
+        stack.setItemMeta(meta);
+    }
+
+    /**
+     * 读取启用的曲目序号；返回空集合表示全部曲目启用（与原模组语义一致）。
+     */
+    public static java.util.List<Integer> getEnabledTracks(ItemStack stack) {
+        if (!isInstrument(stack)) {
+            return java.util.List.of();
+        }
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null) {
+            return java.util.List.of();
+        }
+        int[] value = meta.getPersistentDataContainer().get(KEY_TRACKS, PersistentDataType.INTEGER_ARRAY);
+        if (value == null || value.length == 0) {
+            return java.util.List.of();
+        }
+        java.util.List<Integer> result = new java.util.ArrayList<>(value.length);
+        for (int i : value) {
+            result.add(i);
+        }
+        return result;
+    }
+
+    /**
+     * 写入启用的曲目序号；传空集合表示全部启用。
+     */
+    public static void setEnabledTracks(ItemStack stack, java.util.Collection<Integer> tracks) {
+        if (!isInstrument(stack)) {
+            return;
+        }
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null) {
+            return;
+        }
+        if (tracks == null || tracks.isEmpty()) {
+            meta.getPersistentDataContainer().remove(KEY_TRACKS);
+        } else {
+            int[] value = tracks.stream().mapToInt(Integer::intValue).sorted().distinct().toArray();
+            meta.getPersistentDataContainer().set(KEY_TRACKS, PersistentDataType.INTEGER_ARRAY, value);
+        }
         stack.setItemMeta(meta);
     }
 

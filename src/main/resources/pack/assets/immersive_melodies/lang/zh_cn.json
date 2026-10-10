@@ -34,5 +34,7 @@
   "immersive_melodies.help": "打开帮助",
   "immersive_melodies.pause": "暂停",
   "immersive_melodies.read": "点击了解如何上传！",
-  "immersive_melodies.keyboard": "用键盘演奏吧！"
+  "immersive_melodies.keyboard": "用键盘演奏吧！",
+  "gui.immersive_melodies.prev_page": "上一页",
+  "gui.immersive_melodies.next_page": "下一页"
 }

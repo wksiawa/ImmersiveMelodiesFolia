@@ -17,6 +17,14 @@ public class Melody {
         return name;
     }
 
+    /**
+     * 界面显示名：内部 id 的下划线按用户要求显示为空格。
+     * 内部存储、文件匹配与 PDC 仍使用 {@link #getName()} 原始 id。
+     */
+    public String getDisplayName() {
+        return name.replace('_', ' ');
+    }
+
     public List<Track> getTracks() {
         return Collections.unmodifiableList(tracks);
     }

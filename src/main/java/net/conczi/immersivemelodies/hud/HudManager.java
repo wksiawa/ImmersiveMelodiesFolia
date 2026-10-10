@@ -52,7 +52,8 @@ public class HudManager {
         stop(player.getUniqueId());
 
         Consumer<ScheduledTask> consumer = task -> {
-            if (!session.isPlaying() || !player.isOnline()) {
+            // 暂停时 HUD 不关闭，进度条冻结在暂停位置；仅 stop/播完/离线才结束
+            if (!session.isActive() || !player.isOnline()) {
                 stop(player.getUniqueId());
                 return;
             }
@@ -90,7 +91,8 @@ public class HudManager {
         Component icon = Component.text(ICON_SHEET).font(HUD_FONT)
                 .append(Component.text(String.valueOf((char) (ICON_BASE + instrument.ordinal()))).font(HUD_FONT));
 
-        Component name = Component.text(" " + melody.getName() + " ", NamedTextColor.GOLD);
+        // 歌名用默认字体显示（原版不修饰），下划线显示为空格
+        Component name = Component.text(" " + melody.getDisplayName() + " ", NamedTextColor.GOLD);
 
         // 进度条
         int filled = (int) Math.round(progress * BAR_SEGMENTS);

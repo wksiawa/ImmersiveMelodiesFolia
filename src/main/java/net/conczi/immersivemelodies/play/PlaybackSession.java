@@ -6,18 +6,18 @@ import net.conczi.immersivemelodies.instrument.InstrumentType;
 import net.conczi.immersivemelodies.melody.Melody;
 import net.conczi.immersivemelodies.melody.Note;
 import net.conczi.immersivemelodies.melody.Track;
-import org.bukkit.Location;
-import org.bukkit.Particle;
-import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
-import org.joml.Vector3f;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
+import java.util.Set;
 
 /**
  * 单个玩家的演奏会话。
  * 使用 Folia 的 EntityScheduler 每 tick 驱动，时间轴为真实毫秒。
+ * 支持暂停/继续（暂停期间时间轴冻结，继续时顺延起点，与原模组
+ * START_TIME/PAUSED_TIME 的游戏刻顺延逻辑等价）与按曲目静音。
  */
 public class PlaybackSession {
 
@@ -28,21 +28,37 @@ public class PlaybackSession {
     private final Player player;
     private final InstrumentType instrument;
     private final Melody melody;
-    private final Random random = new Random();
 
     private final int[] lastIndices;
-    private final long startEpochMs;
+    private long startEpochMs;
+    /** 暂停时刻（epoch 毫秒）；0 表示未暂停 */
+    private long pausedAtMs;
 
-    private volatile boolean playing = true;
+    /** 启用的曲目序号；空集合 = 全部启用（与原模组 TRACKS 组件语义一致） */
+    private final Set<Integer> enabledTracks;
+
+    /**
+     * 任务存活标志：stop 后置 false；暂停不改变它
+     */
+    private volatile boolean active = true;
     private ScheduledTask task;
+    /** 自然结束（曲终/离线）回调，由 PlaybackManager 注入做会话移除与状态复位 */
+    private Runnable onEnd;
 
-    public PlaybackSession(ImmersiveMelodiesPlugin plugin, Player player, InstrumentType instrument, Melody melody) {
+    /** 会话是否仍然存活（暂停中也算；stop/播完后为 false），供 HUD 刷新任务判定 */
+    public boolean isActive() {
+        return active;
+    }
+
+    public PlaybackSession(ImmersiveMelodiesPlugin plugin, Player player, InstrumentType instrument,
+                           Melody melody, Collection<Integer> enabledTracks) {
         this.plugin = plugin;
         this.player = player;
         this.instrument = instrument;
         this.melody = melody;
         this.lastIndices = new int[melody.getTracks().size()];
         this.startEpochMs = System.currentTimeMillis();
+        this.enabledTracks = enabledTracks == null ? new HashSet<>() : new HashSet<>(enabledTracks);
     }
 
     public Player getPlayer() {
@@ -61,27 +77,68 @@ public class PlaybackSession {
         return startEpochMs;
     }
 
+    /** 是否处于可发声状态（未停止且未暂停） */
     public boolean isPlaying() {
-        return playing;
+        return active && pausedAtMs == 0L;
     }
 
+    public boolean isPaused() {
+        return active && pausedAtMs != 0L;
+    }
+
+    /** 已演奏毫秒数（暂停时冻结在暂停位置） */
     public long getElapsedMs() {
-        return playing ? System.currentTimeMillis() - startEpochMs : 0;
+        if (!active) {
+            return 0;
+        }
+        long end = pausedAtMs != 0L ? pausedAtMs : System.currentTimeMillis();
+        return end - startEpochMs;
+    }
+
+    /**
+     * 暂停：记录暂停时刻，时间轴冻结。已暂停或已停止时无效。
+     */
+    public void pause() {
+        if (active && pausedAtMs == 0L) {
+            pausedAtMs = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * 继续：起点顺延暂停时长，时间轴从暂停位置继续。
+     */
+    public void resume() {
+        if (active && pausedAtMs != 0L) {
+            startEpochMs += System.currentTimeMillis() - pausedAtMs;
+            pausedAtMs = 0L;
+        }
+    }
+
+    /** 运行时更新启用曲目（曲目面板点击切换时调用） */
+    public void setEnabledTracks(Collection<Integer> tracks) {
+        enabledTracks.clear();
+        if (tracks != null) {
+            enabledTracks.addAll(tracks);
+        }
     }
 
     void setTask(ScheduledTask task) {
         this.task = task;
     }
 
+    void setOnEnd(Runnable onEnd) {
+        this.onEnd = onEnd;
+    }
+
     /**
      * 每 tick 调用（在玩家所在区域线程上）。
      */
     void tick() {
-        if (!playing) {
+        if (!active || pausedAtMs != 0L) {
             return;
         }
         if (!player.isOnline()) {
-            stop();
+            finish();
             return;
         }
 
@@ -91,6 +148,7 @@ public class PlaybackSession {
         boolean anyNoteRemaining = false;
         List<Track> tracks = melody.getTracks();
         for (int trackIndex = 0; trackIndex < tracks.size(); trackIndex++) {
+            boolean trackEnabled = enabledTracks.isEmpty() || enabledTracks.contains(trackIndex);
             List<Note> notes = tracks.get(trackIndex).getNotes();
             int i = lastIndices[trackIndex];
             while (i < notes.size()) {
@@ -101,86 +159,49 @@ public class PlaybackSession {
                     continue;
                 }
                 if (time + lookAhead >= note.getTime()) {
-                    playNote(player, note, time);
+                    if (trackEnabled) {
+                        InstrumentSounds.playNote(plugin, player, instrument, note);
+                    }
                     i++;
                 } else {
                     break;
                 }
             }
             lastIndices[trackIndex] = i;
+            // 只要还有音符（无论是否静音）会话就持续到旋律结束，便于中途重新启用曲目
             if (i < notes.size()) {
                 anyNoteRemaining = true;
             }
         }
 
         if (!anyNoteRemaining) {
-            // 旋律播放完毕
-            stop();
+            // 旋律播放完毕：走结束回调，由管理器移除会话并复位物品状态
+            finish();
         }
     }
 
-    /**
-     * 播放单个音符，移植自原模组 InstrumentItem.playNote 的音量/音高算法。
-     */
-    private void playNote(Player entity, Note note, long time) {
-        double instrumentVolumeFactor = plugin.getConfig().getDouble("instrument-volume-factor", 1.0);
-        double perceivedLoudnessFactor = plugin.getConfig().getDouble("perceived-loudness-adjustment-factor", 0.5);
-        double humanizationVolume = plugin.getConfig().getDouble("humanization-volume", 0.06);
-        double humanizationPitch = plugin.getConfig().getDouble("humanization-pitch", 0.02);
-        double rangeFactor = plugin.getConfig().getDouble("range-factor", 2.0);
-
-        double volume = note.getVelocity() / 255.0 * 2.0 * instrumentVolumeFactor;
-        double pitch = Math.pow(2, (note.getNote() - 24) / 12.0);
-
-        // 人性化扰动
-        volume = Math.max(0.0, volume * (1.0 + boundedGaussian(humanizationVolume)));
-        pitch *= Math.pow(2.0, boundedGaussian(humanizationPitch) / 12.0);
-
-        // 映射到 8 个八度采样
-        int octave = 1;
-        while (octave < 8 && pitch > 4.0 / 3.0) {
-            pitch /= 2;
-            octave++;
+    /** 自然结束（曲终/离线）：停止任务并通知管理器；手动 stop 不触发回调 */
+    private void finish() {
+        if (!active) {
+            return;
         }
-
-        // 按感知响度调整音量
-        double adjustedVolume = volume / Math.sqrt(pitch * Math.pow(2, octave - 4));
-        volume = volume * (1.0 - perceivedLoudnessFactor) + adjustedVolume * perceivedLoudnessFactor;
-        volume = Math.max(0.0, volume);
-
-        Location loc = entity.getLocation();
-        entity.getWorld().playSound(
-                loc,
-                instrument.getSoundName(octave),
-                SoundCategory.RECORDS,
-                (float) (volume * rangeFactor),
-                (float) pitch
-        );
-
-        // 音符粒子（与原模组相同的偏移计算）
-        Vector3f offset = instrument.getParticleOffset();
-        double yawRad = Math.toRadians(-entity.getBodyYaw());
-        double x = Math.sin(yawRad);
-        double z = Math.cos(yawRad);
-        double px = entity.getX() + x * offset.z + z * offset.x;
-        double py = entity.getY() + entity.getHeight() / 2.0 + offset.y;
-        double pz = entity.getZ() + z * offset.z - x * offset.x;
-        entity.getWorld().spawnParticle(Particle.NOTE, px, py, pz, 1);
-    }
-
-    public void stop() {
-        playing = false;
+        active = false;
+        pausedAtMs = 0L;
         if (task != null) {
             task.cancel();
             task = null;
         }
+        if (onEnd != null) {
+            onEnd.run();
+        }
     }
 
-    private double boundedGaussian(double maxAbs) {
-        if (maxAbs <= 0.0) {
-            return 0.0;
+    public void stop() {
+        active = false;
+        pausedAtMs = 0L;
+        if (task != null) {
+            task.cancel();
+            task = null;
         }
-        double value = random.nextGaussian() * (maxAbs / 3.0);
-        return Math.clamp(value, -maxAbs, maxAbs);
     }
 }

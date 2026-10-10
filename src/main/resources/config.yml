@@ -14,3 +14,21 @@ perceived-loudness-adjustment-factor: 0.5
 range-factor: 2.0
 
 # 首次启动会自动释放 jar 内置的全部 MIDI 旋律到 melodies/ 目录
+
+# 可演奏生物（自然生成时按概率装备随机乐器并自动演奏）
+# 与原模组 Config.mobInstrumentFactors 一致，可随时增删改；
+# key 为实体类型命名空间 id，value 为 0~1 的生成概率。
+mob-instruments:
+  minecraft:zombie: 0.01
+  minecraft:husk: 0.01
+  minecraft:skeleton: 0.01
+  minecraft:wither_skeleton: 0.01
+  minecraft:piglin_brute: 0.01
+  minecraft:piglin: 0.01
+  minecraft:zombified_piglin: 0.01
+  minecraft:pillager: 0.01
+
+# 带乐器的怪物是否不攻击玩家（true = 只演奏不攻击，服务端适配；原模组怪物仍会攻击）
+mob-instrument-peaceful: true
+# 生物自动演奏时的合奏搜索半径（格），附近有同曲目演奏者则对齐起始时间
+mob-ensemble-radius: 32

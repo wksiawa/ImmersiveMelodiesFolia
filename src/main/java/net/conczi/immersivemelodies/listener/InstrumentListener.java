@@ -43,8 +43,8 @@ public class InstrumentListener implements Listener {
 
         event.setCancelled(true);
 
-        // 正在演奏时右键 = 停止（清理双手所有乐器状态）
-        if (plugin.getPlaybackManager().isPlaying(player)) {
+        // 存在会话（演奏中或暂停中）时右键 = 停止（清理双手所有乐器状态）
+        if (plugin.getPlaybackManager().hasSession(player)) {
             plugin.getPlaybackManager().stop(player);
             ItemStack main = player.getInventory().getItemInMainHand();
             if (InstrumentItems.isInstrument(main)) InstrumentItems.setPlaying(main, false);
